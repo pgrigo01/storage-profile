@@ -41,6 +41,11 @@ pc.defineParameter(
     "routableIP", "Routable IP",
     portal.ParameterType.BOOLEAN, False,
     longDescription="Add a routable IP to the VM.")
+# Add parameter for persistent storage
+pc.defineParameter(
+    "persistent_storage", "Persistent Storage Size (GB)",
+    portal.ParameterType.INTEGER, 0,
+    longDescription="The size of persistent storage to mount at /mydata. 0 means no persistent storage.")
 pc.defineStructParameter(
     "sharedVlans", "Add Shared VLAN", [],
     multiValue=True, itemDefaultValue={}, min=0, max=None,
@@ -103,6 +108,13 @@ sharedvlans = []
 node = ig.XenVM("node-0")
 node.disk_image = params.image
 node.exclusive = False
+
+# Add persistent storage if requested
+if params.persistent_storage > 0:
+    bs = node.Blockstore("bs", "/mydata")
+    bs.size = str(params.persistent_storage) + "GB"
+    bs.placement = "any"
+
 if params.routableIP:
     node.routable_control_ip = True
 if params.aggregate:
