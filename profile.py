@@ -214,7 +214,7 @@ if params.wantShortTermDataset:
     shortTermBS.dataset = params.shortTermDatasetName
     shortTermBS.type = "dataset"
     shortTermBS.temporary = True  # Marks this as a short-term (ephemeral) dataset.
-    shortTermBS.size = f"{params.shortTermDatasetSizeGB}GB"
+    shortTermBS.size = "{}GB".format(params.shortTermDatasetSizeGB)
     
     # Optionally, enforce placement on a specific cluster if not set to "ANY".
     if params.shortTermDatasetPlacement != "ANY":
@@ -223,7 +223,7 @@ if params.wantShortTermDataset:
     # Optionally, add a service to create the mount directory on the node.
     node.addService(pg.Execute(
         shell="sh",
-        command=f"sudo mkdir -p {params.shortTermDatasetMountPoint}"
+        command="sudo mkdir -p {}".format(params.shortTermDatasetMountPoint)
     ))
 
 # ---------------------------------------------------------------------------
