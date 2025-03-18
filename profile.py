@@ -86,14 +86,8 @@ pc.defineParameter(
     longDescription="Select this option if you want to attach a short-term (ephemeral) dataset to your node."
 )
 
-pc.defineParameter(
-    "shortTermDatasetName",
-    "Short-Term Dataset Name",
-    portal.ParameterType.STRING,
-    "my-short-term-ds",
-    longDescription="Name for your short-term dataset (alphanumeric, fewer than 32 characters)."
-)
-
+# (Note: For ephemeral datasets, do not specify a dataset name,
+# since setting a dataset attribute forces persistent behavior with URN validation.)
 pc.defineParameter(
     "shortTermDatasetSizeGB",
     "Short-Term Dataset Size (GB)",
@@ -110,7 +104,7 @@ pc.defineParameter(
     longDescription="The mount point where the short-term dataset will be attached to the node."
 )
 
-# Optional: Specify a placement cluster for the dataset
+# Optional: Specify a placement cluster for the dataset.
 datasetClusters = [
     ("ANY", "Any Available Cluster"),
     ("utah", "Utah"),
@@ -204,15 +198,12 @@ for sv in sharedvlans:
     request.addResource(sv)
 
 # ---------------------------------------------------------------------------
-# Integrate the Short-Term Dataset if Requested
-
+# Integrate the Short-Term (Ephemeral) Dataset if Requested
 if params.wantShortTermDataset:
     # Create a RemoteBlockstore resource for the short-term dataset.
     shortTermBS = request.RemoteBlockstore("shortTermDS", params.shortTermDatasetMountPoint)
     
-    # Configure the dataset to be ephemeral and to have the specified size.
-    shortTermBS.dataset = params.shortTermDatasetName
-    shortTermBS.type = "dataset"
+    # Do not set 'dataset' here; that attribute is for persistent datasets (which require a valid URN).
     shortTermBS.temporary = True  # Marks this as a short-term (ephemeral) dataset.
     shortTermBS.size = "{}GB".format(params.shortTermDatasetSizeGB)
     
