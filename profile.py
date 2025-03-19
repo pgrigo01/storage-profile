@@ -110,12 +110,20 @@ node.disk_image = params.image
 node.exclusive = False
 
 
-#Creating a Node-local Dataset 
-# Allocate a node and ask for extra_disk_space mounted at /mydata #optional
+
+
 if params.extra_disk_space > 0:
     bs = node.Blockstore("bs", "/mydata")
     bs.size = str(params.extra_disk_space) + "GB"
     bs.placement = "any"
+    
+    # Add startup script
+    node.addService(pg.Execute(shell="sh", command="""
+        sudo mkdir -p /mydata
+        sudo chmod 777 /mydata
+        echo "Dataset ready for population at /mydata" > /mydata/README.txt
+        echo "[$(date)] Storage setup complete" >> /var/log/storage-setup.log
+    """))
 
 if params.routableIP:
     node.routable_control_ip = True
