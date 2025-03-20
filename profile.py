@@ -27,25 +27,35 @@ imagelist = [
     ('urn:publicid:IDN+emulab.net+image+emulab-ops//FBSD113-64-STD', 'FreeBSD 11.3')
 ]
 
+# Define node count parameter
+pc.defineParameter(
+    "node_count", "Number of Nodes",
+    portal.ParameterType.INTEGER,
+    1,  # Default to 1 node
+    longDescription="Number of nodes to create (1-10)")
+
 pc.defineParameter(
     "aggregate", "Specific Aggregate",
     portal.ParameterType.STRING,
     agglist[0][0], agglist)
+
 pc.defineParameter(
     "image", "Node Image",
     portal.ParameterType.IMAGE,
     imagelist[0][0],
     imagelist,
-    longDescription="The image your node will run.")
+    longDescription="The image your nodes will run.")
+
 pc.defineParameter(
     "routableIP", "Routable IP",
     portal.ParameterType.BOOLEAN, False,
-    longDescription="Add a routable IP to the VM.")
-# Add parameter for extra_disk_space storage
+    longDescription="Add a routable IP to each VM.")
+
 pc.defineParameter(
-    "extra_disk_space", "extra_disk_space Storage Size (GB)",
+    "extra_disk_space", "Extra Disk Space (GB)",
     portal.ParameterType.INTEGER, 0,
-    longDescription="The size of extra_disk_space storage to mount at /mydata. 0 means no extra_disk_space storage.")
+    longDescription="The size of storage to mount at /mydata. 0 means no extra storage.")
+
 pc.defineStructParameter(
     "sharedVlans", "Add Shared VLAN", [],
     multiValue=True, itemDefaultValue={}, min=0, max=None,
@@ -53,25 +63,29 @@ pc.defineStructParameter(
         portal.Parameter(
             "createSharedVlan", "Create Shared VLAN",
             portal.ParameterType.BOOLEAN, False,
-            longDescription="Create a new shared VLAN with the name above, and connect the first node to it."),
+            longDescription="Create a new shared VLAN with the name above."),
         portal.Parameter(
             "connectSharedVlan", "Connect to Shared VLAN",
             portal.ParameterType.BOOLEAN, False,
-            longDescription="Connect an existing shared VLAN with the name below to the first node."),
+            longDescription="Connect an existing shared VLAN with the name below."),
         portal.Parameter(
             "name", "Shared VLAN Name",
             portal.ParameterType.STRING, "",
-            longDescription="A shared VLAN name (functions as a private key allowing other experiments to connect to this node/VLAN), used when the 'Create Shared VLAN' or 'Connect to Shared VLAN' options above are selected.  Must be fewer than 32 alphanumeric characters."),
+            longDescription="Shared VLAN name (must be fewer than 32 alphanumeric characters)."),
         portal.Parameter(
             "ip_address", "Shared VLAN IP Address",
             portal.ParameterType.STRING, "10.254.254.1",
-            longDescription="Set the IP address for the shared VLAN interface.  Make sure to use an unused address within the subnet of an existing shared vlan!"),
+            longDescription="IP address for the shared VLAN interface."),
         portal.Parameter(
             "subnet_mask", "Shared VLAN Netmask",
             portal.ParameterType.STRING, "255.255.255.0",
-            longDescription="Set the subnet mask for the shared VLAN interface, as a dotted quad.")])
+            longDescription="Subnet mask for the shared VLAN interface.")])
 
 params = pc.bindParameters()
+
+# Parameter validation
+if params.node_count < 1 or params.node_count > 10:
+    pc.reportError(portal.ParameterError("Invalid number of nodes (must be between 1 and 10)"))
 
 i = 0
 for x in params.sharedVlans:
@@ -96,59 +110,71 @@ for x in params.sharedVlans:
 
 pc.verifyParameters()
 
-# Create a Request object to start building the RSpec.
+# Create a Request object
 request = pc.makeRequestRSpec()
 
 tour = ig.Tour()
-tour.Description(ig.Tour.TEXT, "Create a single shared-mode VM and host or connect to shared vlan(s).")
+tour.Description(ig.Tour.TEXT, 
+    "Create %d VM(s) with optional storage and VLAN connectivity." % params.node_count)
 request.addTour(tour)
 
+# Create multiple nodes
+nodes = []
 sharedvlans = []
 
-node = ig.XenVM("node-0")
-node.disk_image = params.image
-node.exclusive = False
-
-
-
-
-if params.extra_disk_space > 0:
-    bs = node.Blockstore("bs", "/mydata")
-    bs.size = str(params.extra_disk_space) + "GB"
-    bs.placement = "any"
-    
-    # Add startup script
-    node.addService(pg.Execute(shell="sh", command="""
-        sudo mkdir -p /mydata
-        sudo chmod 777 /mydata
-        echo "Dataset ready for population at /mydata" > /mydata/README.txt
-        echo "[$(date)] Storage setup complete" >> /var/log/storage-setup.log
-    """))
-
-if params.routableIP:
-    node.routable_control_ip = True
-if params.aggregate:
-    node.component_manager_id = params.aggregate
-if params.image:
+for i in range(params.node_count):
+    node = ig.XenVM("node-%d" % i)
     node.disk_image = params.image
-k = 0
-for x in params.sharedVlans:
-    iface = node.addInterface("ifSharedVlan%d" % (k,))
-    if x.ip_address:
-        iface.addAddress(
-            pg.IPv4Address(x.ip_address, x.subnet_mask))
-    sharedvlan = pg.Link('shared-vlan-%d' % (k,))
-    sharedvlan.addInterface(iface)
-    if x.createSharedVlan:
-        sharedvlan.createSharedVlan(x.name)
-    else:
-        sharedvlan.connectSharedVlan(x.name)
-    sharedvlan.link_multiplexing = True
-    sharedvlan.best_effort = True
-    sharedvlans.append(sharedvlan)
-    k += 1
+    node.exclusive = False
 
-request.addResource(node)
+    if params.extra_disk_space > 0:
+        bs = node.Blockstore("bs-%d" % i, "/mydata")
+        bs.size = str(params.extra_disk_space) + "GB"
+        bs.placement = "any"
+        
+        # Add startup script
+        node.addService(pg.Execute(shell="sh", command="""
+            sudo mkdir -p /mydata
+            sudo chmod 777 /mydata
+            echo "Dataset ready for population at /mydata" > /mydata/README.txt
+            echo "[$(date)] Storage setup complete" >> /var/log/storage-setup.log
+        """))
+
+    if params.routableIP:
+        node.routable_control_ip = True
+    if params.aggregate:
+        node.component_manager_id = params.aggregate
+
+    # Configure VLANs for each node
+    k = 0
+    for x in params.sharedVlans:
+        iface = node.addInterface("ifSharedVlan%d" % (k,))
+        if x.ip_address:
+            # Increment last octet of IP for each node
+            ip_parts = x.ip_address.split('.')
+            ip_parts[3] = str(int(ip_parts[3]) + i)
+            node_ip = '.'.join(ip_parts)
+            iface.addAddress(pg.IPv4Address(node_ip, x.subnet_mask))
+        
+        # Only create/connect VLAN once (on first node)
+        if i == 0:
+            sharedvlan = pg.Link('shared-vlan-%d' % (k,))
+            sharedvlan.addInterface(iface)
+            if x.createSharedVlan:
+                sharedvlan.createSharedVlan(x.name)
+            else:
+                sharedvlan.connectSharedVlan(x.name)
+            sharedvlan.link_multiplexing = True
+            sharedvlan.best_effort = True
+            sharedvlans.append(sharedvlan)
+        else:
+            # Add interfaces of other nodes to existing VLANs
+            sharedvlans[k].addInterface(iface)
+        k += 1
+
+    nodes.append(node)
+    request.addResource(node)
+
 for sv in sharedvlans:
     request.addResource(sv)
 
